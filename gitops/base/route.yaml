@@ -1,0 +1,23 @@
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  name: hermes-agent
+  labels:
+    app.kubernetes.io/name: hermes-agent
+    app.kubernetes.io/component: agent
+spec:
+  to:
+    kind: Service
+    name: hermes-agent
+    weight: 100
+  port:
+    targetPort: api
+  tls:
+    termination: edge
+    insecureEdgeTerminationPolicy: Redirect
+  wildcardPolicy: None
+# NOTE: this publishes Hermes' own OpenAI-compatible API
+# (/v1/chat/completions, /v1/models, /v1/responses) plus its webhook endpoints.
+# It is protected only by API_SERVER_KEY from the hermes-maas-credentials Secret.
+# Leave that key set to a strong value, or drop this Route from the overlay and
+# reach the service from inside the cluster only.

@@ -1,0 +1,53 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: hermes-agent
+  namespace: openshift-gitops
+  # Standalone Application under the default AppProject. On a cluster where an
+  # AutoShift ApplicationSet drives the same Argo CD, keep this file out of the
+  # path that ApplicationSet sweeps -- a generated Application and a hand-written
+  # one fighting over the same resources is painful to unpick.
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+
+  source:
+    repoURL: https://github.com/dmc5179/hermes-openshift
+    targetRevision: main
+    path: gitops/overlays/rhoai-sandbox3587
+
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: hermes
+
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=false  # the namespace is a managed resource in the overlay
+      - ApplyOutOfSyncOnly=true
+    retry:
+      limit: 5
+      backoff:
+        duration: 15s
+        factor: 2
+        maxDuration: 5m
+
+  ignoreDifferences:
+    # hermes-maas-credentials is created by scripts/bootstrap-credentials.sh and
+    # holds a runtime-minted MaaS key. Argo CD must never prune it or try to
+    # reconcile its contents.
+    - group: ""
+      kind: Secret
+      name: hermes-maas-credentials
+      jsonPointers:
+        - /data
+    # The CSI driver and the storage controller both write back to a bound PVC.
+    - group: ""
+      kind: PersistentVolumeClaim
+      name: hermes-data
+      jsonPointers:
+        - /spec/volumeName
+        - /spec/resources/requests/storage

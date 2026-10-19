@@ -1,0 +1,27 @@
+# Hermes model binding for the rhoai.sandbox3587 cluster (RHOAI 3.5.1, MaaS GA).
+# Replaces base/config.yaml via configMapGenerator behavior: replace.
+
+model:
+  provider: "custom"
+
+  # MaaS gateway (Gateway maas-default-gateway, gatewayClass openshift-default,
+  # namespace openshift-ingress).
+  #
+  # NOT rh-ai.apps.rhoai.sandbox3587.opentlc.com -- that is data-science-gateway,
+  # the RHOAI dashboard, which also lives in openshift-ingress and is easy to grab
+  # by mistake.
+  base_url: "https://maas.apps.rhoai.sandbox3587.opentlc.com/v1"
+
+  # The one model published on this cluster. Here metadata.name and
+  # spec.model.name happen to be identical; if a second model is ever added,
+  # take the value from spec.model.name.
+  default: "granite-4-tiny-gpu"
+
+  key_env: "MAAS_API_KEY"
+
+  # Body-based routing is in use: Hermes posts to {base_url}/chat/completions with
+  # "model": "granite-4-tiny-gpu" in the body, and the gateway derives the
+  # X-Gateway-Model-Name header from it. Nothing extra to set on the client.
+
+database:
+  journal_mode: "wal"

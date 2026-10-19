@@ -1,0 +1,6 @@
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  name: hermes-agent
+spec:
+  host: hermes.apps.rhoai.sandbox3587.opentlc.com

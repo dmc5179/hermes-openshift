@@ -1,0 +1,38 @@
+# Hermes Agent configuration ($HERMES_HOME/config.yaml).
+#
+# This file is rendered onto the state PVC by the render-config initContainer on
+# every pod start, which is what makes the model binding declarative. It REPLACES
+# the template the image would otherwise seed, so anything not set here falls back
+# to Hermes' built-in defaults rather than to the template's values.
+#
+# This base is a placeholder that points nowhere useful on purpose -- an overlay
+# must replace it (configMapGenerator ... behavior: replace) with the real MaaS
+# gateway URL and model name. Deploying the base alone will fail to reach a model.
+
+model:
+  # "custom" is Hermes' provider mode for any OpenAI-compatible endpoint, which
+  # is exactly what the MaaS gateway presents. Do not use "openrouter": for an
+  # OpenRouter-shaped context Hermes prefers OPENROUTER_API_KEY and will not send
+  # the MaaS key.
+  provider: "custom"
+
+  # MaaS gateway base URL, including the /v1 suffix.
+  base_url: "https://REPLACE-ME.example.com/v1"
+
+  # Must be the model name MaaS serves, i.e. the string that goes in the "model"
+  # field of the request body. Read it from the MaaSModelRef's spec.model.name
+  # (servedModelName), NOT from its metadata.name -- when those differ, the
+  # mismatch surfaces only at inference time as a 404 "the model does not exist",
+  # long after every resource reports Ready.
+  default: "REPLACE-ME"
+
+  # Name of the environment variable holding the sk-oai- API key. With a trusted
+  # config base_url and provider: custom, key_env is the rung Hermes resolves the
+  # credential from. The variable itself comes from the hermes-maas-credentials
+  # Secret, which is not in Git.
+  key_env: "MAAS_API_KEY"
+
+database:
+  # WAL is the default and is correct on an EBS-backed RWO volume. Switch to
+  # "delete" only on a filesystem where WAL is not crash-safe (NFS, SMB).
+  journal_mode: "wal"

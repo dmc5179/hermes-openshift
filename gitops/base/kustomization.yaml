@@ -1,0 +1,36 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: hermes
+
+labels:
+  # includeSelectors is deliberately left off: this is a metadata-only label.
+  # Folding it into the Deployment's selector would bake it into an immutable
+  # field for no benefit.
+  - pairs:
+      app.kubernetes.io/part-of: hermes
+
+resources:
+  - namespace.yaml
+  - pvc.yaml
+  - deployment.yaml
+  - service.yaml
+  - route.yaml
+
+configMapGenerator:
+  # Rendered onto the PVC by the render-config initContainer. The generated name
+  # hash is what restarts the pod when the model binding changes in Git.
+  - name: hermes-model-config
+    files:
+      - config.yaml
+  - name: hermes-env
+    envs:
+      - hermes.env
+
+images:
+  # Pinned by digest, not by :latest. The manifests in ../../manifests/ reference
+  # quay.io/aicatalyst/hermes-agent, which does not resolve publicly; the actual
+  # published repository is hermes-hermes-agent.
+  - name: hermes-agent
+    newName: quay.io/aicatalyst/hermes-hermes-agent
+    digest: sha256:1eb780739aeeb92e7c8f416ae57a0307405081f7fa0610fcffeac6914ea1ad60

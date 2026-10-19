@@ -1,0 +1,179 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: hermes-agent
+  labels:
+    app.kubernetes.io/name: hermes-agent
+    app.kubernetes.io/component: agent
+spec:
+  # Hard-pinned to 1. Hermes state is SQLite on a ReadWriteOnce PVC; a second
+  # replica either cannot schedule or corrupts the database.
+  replicas: 1
+  strategy:
+    # Recreate, not RollingUpdate: a rolling update would try to run two pods
+    # against one RWO volume and the new pod would block forever on attach.
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: hermes-agent
+      app.kubernetes.io/component: agent
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: hermes-agent
+        app.kubernetes.io/component: agent
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+        # No runAsUser / fsGroup: restricted-v2 assigns both from the namespace
+        # annotations. The image's entrypoint-openshift.sh is written for an
+        # arbitrary UID with GID 0.
+
+      initContainers:
+        # The image's entrypoint seeds $HERMES_HOME/config.yaml from its bundled
+        # template ONLY when the file does not already exist -- and the file lives
+        # on the PVC. Without this step the agent would come up pointing at
+        # OpenRouter on first boot and then keep that stale config forever,
+        # ignoring anything we later change in Git.
+        #
+        # Rendering the ConfigMap onto the volume on every start is what makes the
+        # model configuration actually declarative: Argo CD owns the content, and
+        # the configMapGenerator hash below forces a pod restart whenever it
+        # changes.
+        - name: render-config
+          image: hermes-agent
+          imagePullPolicy: IfNotPresent
+          command:
+            - /bin/sh
+            - -c
+            - |
+              set -eu
+              install -m 0600 /config/config.yaml "${HERMES_HOME}/config.yaml"
+              echo "rendered ${HERMES_HOME}/config.yaml from ConfigMap"
+          env:
+            - name: HERMES_HOME
+              value: /opt/data
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: data
+              mountPath: /opt/data
+            - name: model-config
+              mountPath: /config
+              readOnly: true
+          resources:
+            requests:
+              cpu: 10m
+              memory: 64Mi
+            limits:
+              cpu: 200m
+              memory: 256Mi
+
+      containers:
+        - name: hermes
+          image: hermes-agent
+          imagePullPolicy: IfNotPresent
+
+          # No command/args override. The image entrypoint is
+          #   tini -g -- /opt/hermes/docker/entrypoint-openshift.sh
+          # with CMD ["gateway","run"], and that entrypoint activates the venv at
+          # /opt/hermes/.venv, creates the state directory tree and syncs bundled
+          # skills. Overriding command skips all of it.
+
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+
+          envFrom:
+            - configMapRef:
+                name: hermes-env
+            - secretRef:
+                # Created out of band, not managed by Argo CD. See
+                # scripts/bootstrap-credentials.sh.
+                name: hermes-maas-credentials
+
+          env:
+            # Make the MaaS gateway's serving certificate trustable. On a cluster
+            # whose gateway uses the default ingress wildcard, that cert is signed
+            # by the ingress operator's own CA, which is NOT in the system trust
+            # store and NOT in the config.openshift.io/inject-trusted-cabundle
+            # bundle either. Both vars are set because Hermes reaches the endpoint
+            # through httpx (SSL_CERT_FILE) and requests (REQUESTS_CA_BUNDLE).
+            - name: SSL_CERT_FILE
+              value: /etc/hermes/maas-ca/ca-bundle.crt
+            - name: REQUESTS_CA_BUNDLE
+              value: /etc/hermes/maas-ca/ca-bundle.crt
+
+          ports:
+            - name: api
+              containerPort: 8642
+              protocol: TCP
+
+          volumeMounts:
+            - name: data
+              mountPath: /opt/data
+            - name: maas-ca
+              mountPath: /etc/hermes/maas-ca
+              readOnly: true
+            - name: tmp
+              mountPath: /tmp
+
+          # The API server binds 8642 (DEFAULT_PORT in the image's
+          # gateway/platforms/api_server.py), not 8080, and it only binds at all
+          # when API_SERVER_ENABLED is true -- which hermes-env sets.
+          startupProbe:
+            httpGet:
+              path: /health
+              port: api
+            # Deliberately generous: this is a large image and first boot also
+            # runs the bundled skills sync. failureThreshold x periodSeconds
+            # allows ~5 minutes before the pod is declared failed.
+            periodSeconds: 10
+            failureThreshold: 30
+            timeoutSeconds: 5
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: api
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 3
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: api
+            periodSeconds: 30
+            timeoutSeconds: 5
+            failureThreshold: 3
+
+          resources:
+            requests:
+              cpu: 500m
+              memory: 2Gi
+            limits:
+              cpu: "2"
+              memory: 4Gi
+          # No nvidia.com/gpu here, by design. Inference happens in MaaS; this pod
+          # is a client. Requesting a GPU would make it unschedulable on a cluster
+          # whose only GPU is already serving the model.
+
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: hermes-data
+        - name: model-config
+          configMap:
+            name: hermes-model-config
+        - name: maas-ca
+          configMap:
+            name: hermes-maas-ca
+            items:
+              - key: ca-bundle.crt
+                path: ca-bundle.crt
+        - name: tmp
+          emptyDir: {}

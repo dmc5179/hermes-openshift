@@ -1,0 +1,9 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: hermes-data
+spec:
+  # gp3-csi is the cluster default; named explicitly so the claim does not follow
+  # a future change of default StorageClass. ebs.csi.aws.com, WaitForFirstConsumer,
+  # allowVolumeExpansion: true. RWO only -- this cluster has no RWX provisioner.
+  storageClassName: gp3-csi

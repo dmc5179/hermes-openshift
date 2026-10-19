@@ -1,0 +1,10 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: hermes
+  labels:
+    app.kubernetes.io/name: hermes-agent
+    app.kubernetes.io/part-of: hermes
+    # Deliberately NOT labelled autoshift.io/ai-workload: on an AutoShift-managed
+    # cluster that label selects the model-egress policy, which denies the cloud
+    # metadata endpoint. Add it only if you actually want that restriction.
