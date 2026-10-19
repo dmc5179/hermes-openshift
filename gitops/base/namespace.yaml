@@ -5,6 +5,13 @@ metadata:
   labels:
     app.kubernetes.io/name: hermes-agent
     app.kubernetes.io/part-of: hermes
+  annotations:
+    # Prune=false here as well as on the PVC, and the namespace is the one that
+    # actually matters. Deleting a namespace deletes everything inside it,
+    # including PersistentVolumeClaims -- the PVC's own Prune=false does not
+    # survive its namespace going away. Protecting only the volume would leave
+    # the real data-loss path wide open.
+    argocd.argoproj.io/sync-options: Prune=false
     # Deliberately NOT labelled autoshift.io/ai-workload: on an AutoShift-managed
     # cluster that label selects the model-egress policy, which denies the cloud
     # metadata endpoint. Add it only if you actually want that restriction.

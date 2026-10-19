@@ -5,6 +5,20 @@ metadata:
   labels:
     app.kubernetes.io/name: hermes-agent
     app.kubernetes.io/component: storage
+  annotations:
+    # Never let a sync delete this volume. It holds the only copy of everything
+    # Hermes has learned -- skills, memories, user models and the full SQLite
+    # conversation history. That state IS the product; it is not a cache, and
+    # nothing reconstructs it.
+    #
+    # Argo CD would otherwise prune it whenever it stops appearing in the
+    # rendered output. That is a realistic accident once the Application is
+    # generated from a values list rather than hand-written: a renamed or
+    # mistyped entry stops generating this resource, and prune does the rest.
+    #
+    # The cost is that a deliberate teardown leaves the volume behind and you
+    # delete it yourself. For irreplaceable state that is the right way round.
+    argocd.argoproj.io/sync-options: Prune=false
 spec:
   # ReadWriteOnce is correct here, not a limitation to work around. Hermes keeps
   # its state in SQLite on this volume; a second replica sharing it would corrupt
