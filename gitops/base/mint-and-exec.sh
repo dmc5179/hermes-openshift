@@ -98,8 +98,15 @@ except Exception:
             break
         fi
         log "attempt ${attempt}/${MINT_ATTEMPTS}: HTTP ${http_code} but no key in response"
+    elif [[ "${http_code}" == "0" ]]; then
+        # curl never got an HTTP response at all. Distinguished from a real
+        # status because "HTTP 0" reads like a server reply and sends people
+        # looking at the gateway, when the cause is DNS, TLS or connectivity --
+        # which on a cold cluster is the expected transient this retry exists
+        # for.
+        log "attempt ${attempt}/${MINT_ATTEMPTS}: no HTTP response (DNS, TLS or connection failure reaching ${MAAS_API_BASE})"
     else
-        log "attempt ${attempt}/${MINT_ATTEMPTS}: mint failed, HTTP ${http_code:-no-response}"
+        log "attempt ${attempt}/${MINT_ATTEMPTS}: mint rejected, HTTP ${http_code}"
     fi
 
     if (( attempt < MINT_ATTEMPTS )); then
