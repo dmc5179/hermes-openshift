@@ -98,6 +98,23 @@ spec:
                 name: hermes-maas-credentials
 
           env:
+            # The MaaS key, under the name this Hermes build actually reads.
+            #
+            # For a bare `provider: custom`, the image resolves its credential
+            # from OPENAI_API_KEY (candidates are: explicit key, OPENAI_API_KEY,
+            # OPENROUTER_API_KEY). A `model.key_env` field in config.yaml is NOT
+            # consulted on this path -- key_env is only honoured inside a named
+            # `providers:` entry. Setting it there and nowhere else yields a 401
+            # from the gateway while plain curl from the same pod succeeds.
+            #
+            # Kept as a secretKeyRef rather than a config.yaml `model.api_key`,
+            # because config.yaml is a ConfigMap and must not carry a credential.
+            - name: OPENAI_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: hermes-maas-credentials
+                  key: MAAS_API_KEY
+
             # Make the MaaS gateway's serving certificate trustable. On a cluster
             # whose gateway uses the default ingress wildcard, that cert is signed
             # by the ingress operator's own CA, which is NOT in the system trust

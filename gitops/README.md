@@ -205,6 +205,33 @@ model:
   response then echoes `"model":"granite-4-tiny-gpu"`, the *served* name, so the
   response does not tell you what to send.
 
+## Token quota sizing
+
+Hermes is a poor fit for a small token quota, and this bites immediately.
+
+Measured on this cluster: a single trivial prompt ("reply with three words")
+consumed **14,208 prompt tokens**. Hermes front-loads a large system prompt —
+tool definitions, skills, memory, `SOUL.md` — on every turn, so that figure is
+roughly the *floor* per request, not an outlier. A real multi-turn conversation
+with tool calls is several times larger.
+
+The subscription this was tested against allows:
+
+```yaml
+tokenRateLimits:
+  - limit: 100
+    window: 1m
+```
+
+100 tokens per minute against a ~14,200-token floor. The first call succeeds on
+burst allowance and everything after it returns 429 until the window rolls.
+
+Raising it is a platform decision on the `MaaSSubscription` in the
+`models-as-a-service` namespace — deliberately **not** something this
+Application touches. Budget from measurement, not intuition: multiply the
+observed per-turn cost by expected turns per minute, and leave headroom for
+tool-call loops, which fan out into several model calls per user message.
+
 ## Deliberate constraints
 
 - **`replicas: 1`, `strategy: Recreate`.** State is SQLite on a ReadWriteOnce
@@ -229,7 +256,7 @@ model:
 | Agent talks to OpenRouter, not MaaS | A stale `config.yaml` on the PVC. Confirm the initContainer ran. |
 | `404` on inference while `/v1/models` works fine | Almost always a bare model name in `model.default`. Body-based routing needs the qualified `publishers/<ns>/models/<name>` id. Everything reports `Ready` while this fails. |
 | `401` from the gateway | Key expired, revoked, or minted without a `subscription`. Re-run `bootstrap-credentials.sh`. |
-| `429` | MaaS token quota or rate limit — a `MaaSSubscription` decision, not a client bug. |
+| `429 Too Many Requests` | MaaS token quota. **Expect this with a demo-sized subscription** — see [Token quota](#token-quota-sizing). Not a client bug; raising it is a `MaaSSubscription` change, which is platform-owned. |
 | Authenticated request → `no healthy upstream` | Usually `maas-api` itself, not your workload. It holds a PostgreSQL connection to an **external** RDS instance on 5432; a default-deny egress policy on `redhat-ai-gateway-infra` severs it and presents as a gateway fault. |
 | `oc get application` returns nothing | RHACM shadows the short name. Use `applications.argoproj.io`. |
 

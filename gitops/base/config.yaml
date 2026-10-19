@@ -30,11 +30,11 @@ model:
   # -- read it from /v1/models.
   default: "publishers/REPLACE-NS/models/REPLACE-MODEL"
 
-  # Name of the environment variable holding the sk-oai- API key. With a trusted
-  # config base_url and provider: custom, key_env is the rung Hermes resolves the
-  # credential from. The variable itself comes from the hermes-maas-credentials
-  # Secret, which is not in Git.
-  key_env: "MAAS_API_KEY"
+  # No credential here. config.yaml is a ConfigMap, so the key must not live in
+  # it; the Deployment wires OPENAI_API_KEY from the hermes-maas-credentials
+  # Secret instead, which is what this build reads on the bare `provider: custom`
+  # path. (`model.key_env` is ignored there -- it is only honoured inside a named
+  # `providers:` entry.)
 
 database:
   # WAL is the default and is correct on an EBS-backed RWO volume. Switch to

@@ -28,7 +28,13 @@ model:
   # Always read the id from GET {base}/maas-api/v1/models.
   default: "publishers/llm/models/granite-4-tiny-gpu"
 
-  key_env: "MAAS_API_KEY"
+  # No api_key / key_env here on purpose.
+  #
+  # config.yaml is a ConfigMap, so it must not carry the credential. And a
+  # `model.key_env` would be ignored anyway: on the bare `provider: custom` path
+  # this build resolves its key from OPENAI_API_KEY, which the Deployment wires
+  # from the hermes-maas-credentials Secret. key_env is only honoured inside a
+  # named `providers:` entry.
 
 database:
   journal_mode: "wal"
