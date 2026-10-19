@@ -12,6 +12,7 @@ labels:
 
 resources:
   - namespace.yaml
+  - serviceaccount.yaml
   - pvc.yaml
   - deployment.yaml
   - service.yaml
@@ -26,6 +27,11 @@ configMapGenerator:
   - name: hermes-env
     envs:
       - hermes.env
+  # The startup wrapper. Hashed like the others, so editing the script rolls
+  # the pod -- which is what you want, since a restart is what re-mints.
+  - name: hermes-bootstrap
+    files:
+      - mint-and-exec.sh
 
 images:
   # Pinned by digest, not by :latest. The manifests in ../../manifests/ reference

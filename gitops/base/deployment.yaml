@@ -23,6 +23,10 @@ spec:
         app.kubernetes.io/name: hermes-agent
         app.kubernetes.io/component: agent
     spec:
+      # The pod's own identity, used to mint its MaaS key at startup. Its
+      # auto-mounted token is what mint-and-exec.sh authenticates with.
+      serviceAccountName: hermes-agent
+
       securityContext:
         runAsNonRoot: true
         seccompProfile:
@@ -78,11 +82,20 @@ spec:
           image: hermes-agent
           imagePullPolicy: IfNotPresent
 
-          # No command/args override. The image entrypoint is
-          #   tini -g -- /opt/hermes/docker/entrypoint-openshift.sh
-          # with CMD ["gateway","run"], and that entrypoint activates the venv at
-          # /opt/hermes/.venv, creates the state directory tree and syncs bundled
-          # skills. Overriding command skips all of it.
+          # Wrapper entrypoint: mint a MaaS key with the pod's ServiceAccount
+          # token, export it as OPENAI_API_KEY, then exec the image's real
+          # entrypoint. See mint-and-exec.sh for why this cannot be an
+          # initContainer -- the credential has to reach the process as an
+          # environment variable, and only the process itself can set that.
+          #
+          # The script reproduces the image's own ENTRYPOINT and CMD, because
+          # overriding `command` replaces both. `args` below supplies the CMD
+          # half and is forwarded by the script's "$@".
+          #
+          # To roll back to the pre-minting behaviour, delete command/args and
+          # the key reverts to the one in hermes-maas-credentials.
+          command: ["/bin/bash", "/opt/hermes-bootstrap/mint-and-exec.sh"]
+          args: ["gateway", "run"]
 
           securityContext:
             allowPrivilegeEscalation: false
@@ -98,6 +111,14 @@ spec:
                 name: hermes-maas-credentials
 
           env:
+            # FALLBACK ONLY. mint-and-exec.sh overwrites OPENAI_API_KEY with a
+            # freshly minted key before Hermes starts, so this value is not what
+            # the agent ends up using. It is retained during the transition so
+            # that deleting command/args from this container is a complete
+            # rollback to the pre-minting behaviour. Remove it, and
+            # MAAS_API_KEY from the Secret, in a separate commit once
+            # self-minting has proven itself.
+            #
             # The MaaS key, under the name this Hermes build actually reads.
             #
             # For a bare `provider: custom`, the image resolves its credential
@@ -136,6 +157,9 @@ spec:
               mountPath: /opt/data
             - name: maas-ca
               mountPath: /etc/hermes/maas-ca
+              readOnly: true
+            - name: bootstrap
+              mountPath: /opt/hermes-bootstrap
               readOnly: true
             - name: tmp
               mountPath: /tmp
@@ -192,5 +216,11 @@ spec:
             items:
               - key: ca-bundle.crt
                 path: ca-bundle.crt
+        - name: bootstrap
+          configMap:
+            name: hermes-bootstrap
+            # Invoked as `bash <script>`, so the mode is not load-bearing; set
+            # readable-and-executable anyway so the file is not surprising.
+            defaultMode: 0555
         - name: tmp
           emptyDir: {}

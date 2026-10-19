@@ -13,6 +13,13 @@ configMapGenerator:
     files:
       - config.yaml
 
+  # Add this cluster's mint settings to the base env. merge, not replace: the
+  # base values (API_SERVER_ENABLED and friends) must survive.
+  - name: hermes-env
+    behavior: merge
+    envs:
+      - hermes-maas.env
+
   # The MaaS gateway serves the default ingress wildcard certificate, signed by
   # the ingress operator's own CA. That CA is not publicly trusted and is not in
   # the bundle that config.openshift.io/inject-trusted-cabundle injects, so the
