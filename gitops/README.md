@@ -187,13 +187,23 @@ model:
   `OPENROUTER_API_KEY` and will not send the MaaS key to a non-OpenRouter host.
 - **`key_env`** is the credential rung Hermes resolves for a bare
   `provider: custom` against a trusted config `base_url`.
-- **`default`** must be the name MaaS serves — read it from the `MaaSModelRef`'s
-  `spec.model.name`, not `metadata.name`. When those differ, the mismatch shows
-  up only at inference time as a 404 *"the model does not exist"*, long after
-  every resource reports `Ready`.
-- Routing is **body-based**: Hermes posts to `{base_url}/chat/completions` with
-  the model in the body, and the gateway derives the `X-Gateway-Model-Name`
-  header itself. Nothing extra on the client.
+- **`default` must be the fully-qualified publisher id**, not the bare model
+  name. Verified on this cluster:
+
+  ```
+  "publishers/llm/models/granite-4-tiny-gpu"  ->  HTTP 200
+  "granite-4-tiny-gpu"                        ->  HTTP 404
+  ```
+
+  Routing is **body-based**: the gateway derives
+  `X-Gateway-Model-Name: publishers/llm/models/granite-4-tiny-gpu` from the
+  request body, and the `HTTPRoute` matches that exact string. A bare name
+  matches no rule and falls through to a 404.
+
+  Take the value from the `id` field of `GET {base}/maas-api/v1/models` — not
+  from `metadata.name`, and not from `spec.model.name`. Note that a successful
+  response then echoes `"model":"granite-4-tiny-gpu"`, the *served* name, so the
+  response does not tell you what to send.
 
 ## Deliberate constraints
 
@@ -217,7 +227,7 @@ model:
 | Pod runs, probes fail, no listener | `API_SERVER_ENABLED` not `true`. |
 | TLS verify error reaching MaaS | `ca-bundle.crt` is still the placeholder — run `fetch-ingress-ca.sh`. |
 | Agent talks to OpenRouter, not MaaS | A stale `config.yaml` on the PVC. Confirm the initContainer ran. |
-| `404 the model does not exist` | `model.default` ≠ `spec.model.name`. Typically appears right after someone adds a *second* model, where `metadata.name` and `spec.model.name` diverge on the `LLMInferenceService`. The request body must carry `spec.model.name`. Everything reports `Ready` while this fails. |
+| `404` on inference while `/v1/models` works fine | Almost always a bare model name in `model.default`. Body-based routing needs the qualified `publishers/<ns>/models/<name>` id. Everything reports `Ready` while this fails. |
 | `401` from the gateway | Key expired, revoked, or minted without a `subscription`. Re-run `bootstrap-credentials.sh`. |
 | `429` | MaaS token quota or rate limit — a `MaaSSubscription` decision, not a client bug. |
 | Authenticated request → `no healthy upstream` | Usually `maas-api` itself, not your workload. It holds a PostgreSQL connection to an **external** RDS instance on 5432; a default-deny egress policy on `redhat-ai-gateway-infra` severs it and presents as a gateway fault. |

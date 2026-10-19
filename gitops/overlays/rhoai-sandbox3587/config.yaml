@@ -12,16 +12,23 @@ model:
   # by mistake.
   base_url: "https://maas.apps.rhoai.sandbox3587.opentlc.com/v1"
 
-  # The one model published on this cluster. Here metadata.name and
-  # spec.model.name happen to be identical; if a second model is ever added,
-  # take the value from spec.model.name.
-  default: "granite-4-tiny-gpu"
+  # MUST be the fully-qualified publisher id, exactly as /v1/models reports it in
+  # its "id" field -- NOT the bare name. Verified against this cluster:
+  #
+  #   "publishers/llm/models/granite-4-tiny-gpu"  -> HTTP 200
+  #   "granite-4-tiny-gpu"                        -> HTTP 404
+  #
+  # Body-based routing works by the gateway deriving the header
+  # X-Gateway-Model-Name: publishers/llm/models/granite-4-tiny-gpu from the
+  # request body, and the HTTPRoute matches on that exact string. A bare name
+  # matches no rule and falls through to a 404.
+  #
+  # Confusingly, the 200 response then echoes "model":"granite-4-tiny-gpu" (the
+  # served name) -- so a successful response does not tell you what to send.
+  # Always read the id from GET {base}/maas-api/v1/models.
+  default: "publishers/llm/models/granite-4-tiny-gpu"
 
   key_env: "MAAS_API_KEY"
-
-  # Body-based routing is in use: Hermes posts to {base_url}/chat/completions with
-  # "model": "granite-4-tiny-gpu" in the body, and the gateway derives the
-  # X-Gateway-Model-Name header from it. Nothing extra to set on the client.
 
 database:
   journal_mode: "wal"

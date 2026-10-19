@@ -19,12 +19,16 @@ model:
   # MaaS gateway base URL, including the /v1 suffix.
   base_url: "https://REPLACE-ME.example.com/v1"
 
-  # Must be the model name MaaS serves, i.e. the string that goes in the "model"
-  # field of the request body. Read it from the MaaSModelRef's spec.model.name
-  # (servedModelName), NOT from its metadata.name -- when those differ, the
-  # mismatch surfaces only at inference time as a 404 "the model does not exist",
-  # long after every resource reports Ready.
-  default: "REPLACE-ME"
+  # The string that goes in the "model" field of the request body. For body-based
+  # routing this is the FULLY-QUALIFIED publisher id, in the form
+  #   publishers/<namespace>/models/<model>
+  # exactly as the "id" field of GET {base}/maas-api/v1/models reports it.
+  #
+  # A bare model name 404s: the gateway derives an X-Gateway-Model-Name header
+  # from the body and the HTTPRoute matches the qualified string, so a bare name
+  # matches no rule. Do not take this value from metadata.name or spec.model.name
+  # -- read it from /v1/models.
+  default: "publishers/REPLACE-NS/models/REPLACE-MODEL"
 
   # Name of the environment variable holding the sk-oai- API key. With a trusted
   # config base_url and provider: custom, key_env is the rung Hermes resolves the
