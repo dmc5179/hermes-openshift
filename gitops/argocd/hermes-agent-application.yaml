@@ -16,6 +16,19 @@ metadata:
   # decision with upstream-contribution consequences, not a packaging one. See
   # ../docs/followup-serviceaccount-key-minting.md for the related credential
   # discussion.
+  # This finalizer makes deletion of the Application cascade to every resource
+  # it manages -- including Namespace/hermes and the PVC, which is to say all of
+  # Hermes' accumulated state.
+  #
+  # Measured 2026-10-19: when the AutoShift gitops-workloads policy adopts this
+  # Application, ACM's mustonlyhave does NOT strip the finalizer, even though the
+  # policy's own template omits it. Adoption preserves it. So the cascade risk
+  # survives being brought under policy management, and the Prune=false
+  # annotations on Namespace and PVC are the PRIMARY protection against data
+  # loss here, not a secondary layer over a safer Application.
+  #
+  # Do not remove those annotations on the theory that the policy makes them
+  # redundant. On this cluster it does not.
   finalizers:
     - resources-finalizer.argocd.argoproj.io
 spec:
