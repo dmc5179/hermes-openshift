@@ -1,7 +1,12 @@
 # Follow-up: mint the MaaS key from a ServiceAccount token, not a human token
 
-**Status:** open · **Raised:** 2026-10-18 · **Blocks:** nothing today; this ships
-with the manual-Secret flow in `scripts/bootstrap-credentials.sh`
+**Status:** open, feasibility proven · **Raised:** 2026-10-18 · **Verified
+viable:** 2026-10-19 · **Blocks:** nothing today; this ships with the
+manual-Secret flow in `scripts/bootstrap-credentials.sh`
+
+> `maas-api` accepts a projected ServiceAccount token, with no RBAC and **no
+> audience set** — see [Feasibility](#feasibility-settled-2026-10-19). What
+> remains is implementation, not investigation.
 
 ## The problem
 
@@ -44,14 +49,25 @@ not the current 720h — which shrinks the blast radius of a leak.
 
 ### Pieces
 
-1. **ServiceAccount + RBAC.** `hermes-agent` in the `hermes` namespace, with
-   whatever role `maas-api` requires of a mint caller. Determining that is the
-   first unknown: the API authorises an OpenShift bearer token, but which
-   permission it checks is not documented in what we've read.
+1. **ServiceAccount, no RBAC.** A bare `hermes-agent` ServiceAccount in the
+   `hermes` namespace is sufficient. **Verified** — see
+   [Feasibility](#feasibility-settled-2026-10-19): the mint succeeded with zero
+   RoleBindings and zero ClusterRoleBindings referencing the account. There is
+   no permission scaffolding to design.
 
-2. **Projected token volume**, with the audience `maas-api` expects. If it
-   accepts the default API-server audience this is trivial; if it wants a custom
-   one, the audience has to be discovered.
+2. **Projected token volume — do NOT set an audience.**
+
+   ```yaml
+   - serviceAccountToken:
+       path: token
+       expirationSeconds: 3600
+       # No audience. Setting one gets a 401 from maas-api.
+   ```
+
+   This is a trap, and it fails in the same misleading way the `key_env` 401
+   did: the token is perfectly valid and the API server accepts it, so a 401
+   sends you to RBAC or the gateway, and neither is the cause. Measured:
+   `oc create token <sa>` → 201, the same command with `--audience=maas` → 401.
 
 3. **A mint initContainer** replacing the static Secret. It writes the `sk-` key
    to a shared `emptyDir`, and Hermes reads it via `key_env` pointing at a file,
@@ -66,26 +82,54 @@ not the current 720h — which shrinks the blast radius of a leak.
 5. **Drop `MAAS_API_KEY`** from `hermes-maas-credentials`. The Secret still holds
    `API_SERVER_KEY`, which protects Hermes' own Route and is unrelated to MaaS.
 
-## Open questions to settle first
+## Feasibility: settled 2026-10-19
 
-- Does `maas-api` accept a projected ServiceAccount token at all, or does it
-  require a token with a user identity? **This is the question that decides
-  whether the whole approach works** — settle it before building anything else.
-- What audience must the projected token carry?
-- What RBAC does the mint call check?
-- Does usage attribution follow the minting identity or the `MaaSSubscription`?
-- Does `maas-api` apply a default TTL when `expiresIn` is omitted? Cheap
-  read-only experiment: mint without it, `GET /maas-api/v1/api-keys`, inspect the
-  expiry field, revoke.
+The blocking question — *does `maas-api` accept a projected ServiceAccount token
+at all* — is answered: **yes**. Measured against this cluster with a bare
+ServiceAccount in a throwaway namespace, using `oc create token`, which is the
+same TokenRequest mechanism a projected volume uses:
 
-## Why it isn't being done now
+| Call | Result |
+|---|---|
+| `POST /maas-api/v1/api-keys` | `201`, returns a normal `sk-oai-` key |
+| `GET /maas-api/v1/models` | `200` with that key |
+| `POST /v1/chat/completions` | `200`, usage 36/3 |
+| `DELETE /maas-api/v1/api-keys/<id>` | `200`, using the SA token |
 
-It is a change in deployment design, not a bug fix, and it needs live testing
-against `maas-api` to answer the questions above. The manual-Secret flow works,
-is documented as a known temporary, and pins an explicit 720h expiry — so the
-failure mode today is a loud 401 on a known date, not a silent orphan.
+The full lifecycle works, so the approach is viable rather than speculative.
 
-Worth doing before this is anything more than a demo.
+**Why no RBAC is needed, and why that is not entirely good news.** The
+`MaaSSubscription`'s `owner.groups` is `system:authenticated`, and every
+ServiceAccount belongs to that group. That is what makes this frictionless — and
+it also means *any* ServiceAccount on the cluster can mint a key and spend the
+quota. The quota is therefore not meaningfully scoped to Hermes. Narrowing it
+means setting `accessGroup` to a real group, which is a platform-side change and
+would immediately invalidate existing keys. Fine for a lab; worth knowing before
+anyone calls this production-shaped.
+
+### Still unverified
+
+- **Cold-start timing.** Whether `maas-api` answers a mint at pod start when the
+  gateway is still coming up on a freshly booted cluster. The initContainer's
+  ordering is intra-pod and does not cover this, so the mint wants a retry loop
+  with backoff rather than a single attempt.
+- **Default TTL** when `expiresIn` is omitted — still unknown, still cheap to
+  settle: mint without it, `GET /maas-api/v1/api-keys`, read the expiry, revoke.
+  Moot if the mint always passes an explicit short TTL, which it should.
+- **Usage attribution** — whether it follows the minting identity or the
+  subscription. Less pressing now: the minting identity becomes a ServiceAccount
+  rather than a departing human either way.
+
+## Why it isn't built yet
+
+Feasibility is settled but nothing has been implemented here. The remaining work
+is ordinary: a ServiceAccount, a projected token volume, a mint initContainer
+with retry, and dropping `MAAS_API_KEY` from the bootstrap script.
+
+The manual-Secret flow still works, is documented as a known temporary, and pins
+an explicit 720h expiry — so today's failure mode is a loud 401 on a known date,
+not a silent orphan. But the main argument for deferring ("it needs live testing
+to know if it even works") has now expired.
 
 ## Reference
 
