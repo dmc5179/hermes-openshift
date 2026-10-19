@@ -228,9 +228,17 @@ burst allowance and everything after it returns 429 until the window rolls.
 
 Raising it is a platform decision on the `MaaSSubscription` in the
 `models-as-a-service` namespace — deliberately **not** something this
-Application touches. Budget from measurement, not intuition: multiply the
-observed per-turn cost by expected turns per minute, and leave headroom for
-tool-call loops, which fan out into several model calls per user message.
+Application touches. And it is not a local change: that subscription's owner is
+the group `system:authenticated`, so raising the limit raises it for *every*
+caller on the cluster. Giving an agent its own subscription is usually the
+better move than widening the shared one.
+
+Budget from measurement, not intuition: multiply the observed per-turn cost by
+expected turns per minute, and leave headroom for tool-call loops, which fan out
+into several model calls per user message.
+
+Note that a chat-style probe will not reveal this — a smoke test spending ~35
+tokens fits the budget comfortably. Only an agent exposes it.
 
 ## Deliberate constraints
 
@@ -251,11 +259,12 @@ tool-call loops, which fan out into several model calls per user message.
 
 | Symptom | Cause |
 |---|---|
+| **`401` from the agent, but `curl` from inside the same pod with the same key returns `200`** | **The credential never reached Hermes.** `model.key_env` in `config.yaml` is ignored on the bare `provider: custom` path — it is only honoured inside a named `providers:` entry. The key must arrive as the `OPENAI_API_KEY` env var. Listed first because the symptom is actively misleading: it sends you to the certificate and the network, which the working `curl` has already proved fine. |
+| `404` on inference while `/v1/models` works fine | Almost always a bare model name in `model.default`. Body-based routing needs the qualified `publishers/<ns>/models/<name>` id. Everything reports `Ready` while this fails. |
 | Pod runs, probes fail, no listener | `API_SERVER_ENABLED` not `true`. |
 | TLS verify error reaching MaaS | `ca-bundle.crt` is still the placeholder — run `fetch-ingress-ca.sh`. |
 | Agent talks to OpenRouter, not MaaS | A stale `config.yaml` on the PVC. Confirm the initContainer ran. |
-| `404` on inference while `/v1/models` works fine | Almost always a bare model name in `model.default`. Body-based routing needs the qualified `publishers/<ns>/models/<name>` id. Everything reports `Ready` while this fails. |
-| `401` from the gateway | Key expired, revoked, or minted without a `subscription`. Re-run `bootstrap-credentials.sh`. |
+| `401` from the gateway, `curl` also fails | Key expired, revoked, or minted without a `subscription`. Re-run `bootstrap-credentials.sh`. |
 | `429 Too Many Requests` | MaaS token quota. **Expect this with a demo-sized subscription** — see [Token quota](#token-quota-sizing). Not a client bug; raising it is a `MaaSSubscription` change, which is platform-owned. |
 | Authenticated request → `no healthy upstream` | Usually `maas-api` itself, not your workload. It holds a PostgreSQL connection to an **external** RDS instance on 5432; a default-deny egress policy on `redhat-ai-gateway-infra` severs it and presents as a gateway fault. |
 | `oc get application` returns nothing | RHACM shadows the short name. Use `applications.argoproj.io`. |
