@@ -1,0 +1,63 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: hermes-agent
+spec:
+  template:
+    spec:
+      # The base points SSL_CERT_FILE and REQUESTS_CA_BUNDLE at
+      # /etc/hermes/maas-ca/ca-bundle.crt. Setting SSL_CERT_FILE REPLACES the
+      # trust store rather than adding to it, so that file must contain the
+      # public CAs as well -- otherwise every public HTTPS endpoint (OpenAI,
+      # OpenRouter, ...) fails TLS verification.
+      #
+      # This initContainer builds it at pod start: the image's own system trust
+      # store, plus any extra CA supplied through the hermes-extra-ca ConfigMap
+      # (an in-cluster endpoint behind the ingress CA, a corporate proxy, ...).
+      # The env vars and mount path are left exactly as the base defines them.
+      initContainers:
+        - name: build-trust-bundle
+          image: hermes-agent
+          imagePullPolicy: IfNotPresent
+          command:
+            - /bin/sh
+            - -c
+            - |
+              set -eu
+              out=/bundle/ca-bundle.crt
+              cat /etc/pki/tls/certs/ca-bundle.crt > "$out"
+              for f in /extra-ca/*; do
+                [ -f "$f" ] || continue
+                if grep -q 'BEGIN CERTIFICATE' "$f"; then
+                  printf '\n' >> "$out"
+                  cat "$f" >> "$out"
+                  echo "added extra CA: $(basename "$f")"
+                fi
+              done
+              echo "trust bundle: $(grep -c 'BEGIN CERTIFICATE' "$out") certificates"
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: maas-ca
+              mountPath: /bundle
+            - name: extra-ca
+              mountPath: /extra-ca
+              readOnly: true
+          resources:
+            requests:
+              cpu: 10m
+              memory: 32Mi
+            limits:
+              cpu: 100m
+              memory: 64Mi
+      volumes:
+        # Same name the base uses, so the main container's existing mount at
+        # /etc/hermes/maas-ca now resolves to the bundle built above.
+        - name: maas-ca
+          emptyDir: {}
+        - name: extra-ca
+          configMap:
+            name: hermes-extra-ca
+            optional: true

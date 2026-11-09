@@ -1,0 +1,65 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mock-llm
+  labels:
+    app.kubernetes.io/name: mock-llm
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: mock-llm
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: mock-llm
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: mock-llm
+          # Stock UBI Python; the server is standard library only, so no build.
+          image: registry.access.redhat.com/ubi9/python-312@sha256:5b0c67feb3f2e5637c6301ea22e2839d402dd71d88c3cec8d1fd278ce0f9e69a
+          command: ["python3", "-u", "/app/mock_llm.py"]
+          env:
+            - name: MOCK_MODEL
+              value: mock-model
+            - name: MOCK_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: mock-llm-key
+                  key: MOCK_API_KEY
+          ports:
+            - name: http
+              containerPort: 8000
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 20
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+          resources:
+            requests:
+              cpu: 10m
+              memory: 32Mi
+            limits:
+              cpu: 200m
+              memory: 128Mi
+          volumeMounts:
+            - name: code
+              mountPath: /app
+              readOnly: true
+      volumes:
+        - name: code
+          configMap:
+            name: mock-llm-code

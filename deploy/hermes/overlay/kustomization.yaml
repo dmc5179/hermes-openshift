@@ -1,0 +1,55 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+# Hermes against a plain OpenAI-compatible endpoint (OpenAI, OpenRouter, vLLM,
+# a NIM, a llama.cpp server, ...), ready for Open WebUI to connect to.
+#
+# This reuses gitops/base unchanged -- the verified Deployment, probes, PVC,
+# Prune=false protections and render-config initContainer all come from there,
+# so there is one definition of the workload rather than two drifting copies.
+# The patches below only swap out the parts that are specific to RHOAI MaaS:
+#
+#   - the self-minting MaaS wrapper entrypoint   -> the image's own entrypoint
+#   - the hermes-maas-credentials Secret         -> hermes-credentials
+#   - the MaaS-gateway CA ConfigMap              -> system trust store + optional extra CA
+#
+# deploy-hermes.sh does not apply this directory directly. It generates a
+# per-namespace overlay under ../.build/<namespace>/ that layers the model
+# config, namespace and storage class on top of this one.
+
+resources:
+  - ../../../gitops/base
+
+patches:
+  # 1. Run the image's own entrypoint (tini -> entrypoint-openshift.sh, CMD
+  #    "gateway run") instead of the MaaS key-minting wrapper. Removing both
+  #    fields hands control back to the image's ENTRYPOINT and CMD.
+  - target:
+      kind: Deployment
+      name: hermes-agent
+    patch: |-
+      - op: remove
+        path: /spec/template/spec/containers/0/command
+      - op: remove
+        path: /spec/template/spec/containers/0/args
+
+  # 2. Credentials and trust bundle.
+  - path: patch-credentials.yaml
+
+  # 3. Replace the MaaS CA volume. Two steps because a strategic merge cannot
+  #    change a volume's source type in place: the configMap field would survive
+  #    alongside the new emptyDir and the pod would be rejected.
+  - path: patch-drop-maas-ca-volume.yaml
+  - path: patch-trust-bundle.yaml
+
+images:
+  # The base's own images: rewrite runs inside the base, before this overlay
+  # adds the build-trust-bundle initContainer, so that container still carries
+  # the bare name "hermes-agent" and needs rewriting here too.
+  #
+  # MUST match the digest in gitops/base/kustomization.yaml. deploy-hermes.sh
+  # refuses to run if the two differ, so a base image bump that forgets this
+  # line fails loudly instead of running two different Hermes builds in one pod.
+  - name: hermes-agent
+    newName: quay.io/aicatalyst/hermes-hermes-agent
+    digest: sha256:1eb780739aeeb92e7c8f416ae57a0307405081f7fa0610fcffeac6914ea1ad60

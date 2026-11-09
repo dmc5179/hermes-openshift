@@ -55,3 +55,7 @@ secrets/
 
 # Hermes Agent
 .hermes/
+
+# deploy/ scripts: per-run generated overlays and local config
+.build/
+deploy/deploy.env

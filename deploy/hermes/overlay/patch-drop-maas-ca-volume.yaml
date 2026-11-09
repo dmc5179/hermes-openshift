@@ -1,0 +1,10 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: hermes-agent
+spec:
+  template:
+    spec:
+      volumes:
+        - name: maas-ca
+          $patch: delete

@@ -1,0 +1,26 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+# A fake OpenAI-compatible endpoint for smoke-testing the Hermes + Open WebUI
+# plumbing on a cluster with no real model. See mock_llm.py for behaviour.
+#
+#   ../deploy.sh mock-llm      deploys it and prints the values to point Hermes at
+#
+# The API key it enforces lives in Secret mock-llm/mock-llm-key, created by
+# deploy.sh, so the test exercises Hermes' real credential path.
+
+namespace: mock-llm
+
+labels:
+  - pairs:
+      app.kubernetes.io/part-of: hermes-test
+
+resources:
+  - namespace.yaml
+  - deployment.yaml
+  - service.yaml
+
+configMapGenerator:
+  - name: mock-llm-code
+    files:
+      - mock_llm.py
