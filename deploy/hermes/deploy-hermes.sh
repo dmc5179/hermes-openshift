@@ -179,8 +179,8 @@ if ! $DRY_RUN; then
     ok "logged in as $(oc whoami) to $(oc whoami --show-server)"
 
     # An Argo CD Application with selfHeal would silently revert anything this
-    # script changes. The gitops/ path manages Hermes declaratively; don't
-    # fight it from here.
+    # script changes. Such an Application, for example one left from the earlier
+    # gitops/ path, manages Hermes declaratively; don't fight it from here.
     argo_app=$(oc get deploy hermes-agent -n "$NS" \
         -o 'jsonpath={.metadata.labels.argocd\.argoproj\.io/instance}' 2>/dev/null || true)
     if [[ -n "$argo_app" ]] && ! $FORCE; then

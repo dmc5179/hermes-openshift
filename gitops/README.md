@@ -1,21 +1,23 @@
-# Hermes Agent on RHOAI Models-as-a-Service (Argo CD + Kustomize)
+# Hermes Agent on RHOAI Models-as-a-Service: base workload and findings
 
-> **Superseded for RHOAI MaaS clusters.** Hermes is now deployed by the AutoShift
-> RHACM policies `hermes-agent` and `open-webui` in the AutoShift fork
+> **Not a deployment path any more.** On RHOAI MaaS clusters, Hermes is deployed by the
+> AutoShift RHACM policies `hermes-agent` and `open-webui` in the AutoShift fork
 > (`dmc5179/autoshiftv2`, branch `rhoai-maas`, under `policies/stable/`). They derive
-> each cluster's gateway, model, subscription and CA instead of needing a per-cluster
-> overlay, and the pod renews its own MaaS key. See [`../autoshift/`](../autoshift/).
+> each cluster's gateway, model, subscription and CA, and the pod mints and renews its
+> own MaaS key. See [`../autoshift/`](../autoshift/).
 >
-> What is still current here:
+> What remains here:
 >
-> - **[`base/`](base/)** is the shared Hermes workload. [`../deploy/`](../deploy/)
->   builds on it for clusters without RHOAI, so it must not be removed.
+> - **[`base/`](base/)**, the Hermes workload. [`../deploy/`](../deploy/) builds on it,
+>   so it must not be removed.
 > - **The findings below**, about the published image, its entrypoint, port 8642,
->   `API_SERVER_ENABLED` and the configuration rendered onto the PVC, still hold.
+>   `API_SERVER_ENABLED`, the configuration rendered onto the PVC, model ids and token
+>   quotas. They still hold, and the AutoShift policies are built on them.
 >
-> What is historical: [`overlays/rhoai-sandbox3587/`](overlays/rhoai-sandbox3587/) and
-> [`argocd/`](argocd/) target a cluster that no longer exists. Kept as a record of how
-> the Argo CD path was validated, not for deployment.
+> The Argo CD Application, the `rhoai-sandbox3587` overlay and the bootstrap scripts that
+> deployed this base were removed once nothing used them: the AutoShift
+> `gitops-workloads` policy stopped listing Hermes in fork commit `52e07269`. They are in
+> the history of the `maas-gitops` branch, before the commit that removed them.
 
 Deploys Hermes Agent as a **client of Red Hat OpenShift AI Models-as-a-Service**,
 rather than alongside its own vLLM `InferenceService` as [`../manifests/`](../manifests/) does.
@@ -56,34 +58,20 @@ That last row is the one that shapes this deployment. See
 
 ```
 gitops/
-├── base/                     cluster-independent
-│   ├── config.yaml           Hermes model config (placeholder; overlay replaces)
+├── base/                     cluster-independent; ../deploy/hermes/overlay builds on it
+│   ├── config.yaml           Hermes model config (placeholder; an overlay replaces it)
 │   ├── hermes.env            non-secret env -> ConfigMap hermes-env
+│   ├── mint-and-exec.sh      entrypoint wrapper -> ConfigMap hermes-bootstrap
 │   ├── deployment.yaml       initContainer + agent, no command override
-│   ├── namespace.yaml  pvc.yaml  service.yaml  route.yaml
+│   ├── namespace.yaml  serviceaccount.yaml  pvc.yaml  service.yaml  route.yaml
 │   └── kustomization.yaml    pins the image by digest
-├── overlays/
-│   └── rhoai-sandbox3587/    everything cluster-specific lives here
-│       ├── config.yaml       real MaaS gateway URL + model name
-│       ├── ca-bundle.crt     ingress CA (generated, committed)
-│       └── patch-pvc.yaml  patch-route.yaml  kustomization.yaml
-├── argocd/
-│   └── hermes-agent-application.yaml
-└── scripts/
-    ├── fetch-ingress-ca.sh        regenerate ca-bundle.crt
-    └── bootstrap-credentials.sh   mint MaaS key -> Secret
+└── docs/
+    └── followup-serviceaccount-key-minting.md
 ```
-
-To target another cluster, copy the overlay and change `config.yaml`,
-`ca-bundle.crt` and the Route host. The base needs no edits.
 
 ---
 
-## Deploy
-
-Two bootstrap steps run before Argo CD, because neither can be expressed in Git.
-
-### 1. Mint the MaaS API key
+## MaaS key minting findings
 
 MaaS keys (`sk-oai-…`) are issued at runtime by `maas-api`. No custom resource
 declares one, so nothing committable produces a key. The mint call authenticates
@@ -93,75 +81,23 @@ with an **OpenShift bearer token**, not with an `sk-` key:
 POST {gateway}/maas-api/v1/api-keys      Authorization: Bearer <OpenShift token>
 ```
 
-```bash
-oc login …
-./scripts/bootstrap-credentials.sh
-```
-
-The mint body must carry a `subscription` — a key does **not** bind to one
-implicitly. The script resolves it from `oc get maassubscription -A` and
-hard-fails rather than minting a key bound to nothing. It also passes an explicit
-`expiresIn` (default 720h, override with `MAAS_KEY_TTL`), because whether
-`maas-api` applies a default TTL when the field is omitted is unverified — and
-guessing wrong surfaces as a 401 at 3am that looks like a gateway outage.
-
-It verifies the key against `/maas-api/v1/models` before trusting it, then writes
-`hermes/hermes-maas-credentials` with:
-
-- `MAAS_API_KEY` — the `sk-` key Hermes sends to MaaS
-- `API_SERVER_KEY` — a generated key protecting Hermes' *own* exposed API
-
-Argo CD references this Secret and is configured never to prune or reconcile it.
-Re-running the script rotates the key; `--revoke <id>` retires an old one.
-
-> **This flow is a known temporary.** It mints with `oc whoami -t` — a human's
-> OpenShift token, which is short-lived and tied to that person's session. If
-> they leave, lose the role, or their token is revoked, the `sk-` key may keep
-> working while nobody can revoke or re-mint it; an orphaned credential is worse
-> than an expired one. The durable shape is a projected ServiceAccount token with
-> the pod minting at startup, which also makes rotation automatic because a
-> restart re-mints. Whether `maas-api` attributes usage to the minting identity
-> is unknown — attribution plausibly hangs off the `MaaSSubscription`, but that
-> is unverified.
-
-### 2. Capture the ingress CA
-
-```bash
-./scripts/fetch-ingress-ca.sh rhoai-sandbox3587
-git commit -am 'Add ingress CA bundle'
-```
+- The body must carry a `subscription`. A key does **not** bind to one
+  implicitly, so resolve it (for example from `oc get maassubscription -A`) and
+  fail rather than mint a key bound to nothing.
+- Pass an explicit `expiresIn`. RHOAI 3.5 rejects keys longer than 2160h.
+- Verify a new key against `/maas-api/v1/models` before trusting it.
+- Minting with a person's `oc whoami -t` leaves a key nobody can re-mint or
+  revoke once that person leaves. A ServiceAccount token, with the pod minting at
+  startup, is the durable shape. The AutoShift `hermes-agent` policy does exactly
+  that, and renews by restarting; see
+  [`docs/followup-serviceaccount-key-minting.md`](docs/followup-serviceaccount-key-minting.md).
 
 The MaaS gateway serves the default ingress wildcard certificate, signed by the
 ingress operator's own CA. That CA is not publicly trusted, **and the usual
-`config.openshift.io/inject-trusted-cabundle` annotation does not help** — it
+`config.openshift.io/inject-trusted-cabundle` annotation does not help**: it
 injects the cluster proxy and system CA bundle, which does not contain it. The
-certificate has to be carried explicitly, so the script copies
-`openshift-config-managed/default-ingress-cert` into the overlay. It is a public
-certificate; committing it is fine. Re-run it after any ingress cert rotation.
-
-### 3. Create the Application
-
-```bash
-oc apply -f argocd/hermes-agent-application.yaml
-oc get applications.argoproj.io hermes-agent -n openshift-gitops
-```
-
-Use the fully-qualified `applications.argoproj.io`. On a cluster running RHACM,
-the short name `application` resolves to `app.k8s.io` and silently returns
-nothing.
-
-### Verify
-
-```bash
-oc get pods -n hermes -w
-oc exec deploy/hermes-agent -n hermes -- curl -sS localhost:8642/health
-
-KEY=$(oc get secret hermes-maas-credentials -n hermes \
-        -o jsonpath='{.data.API_SERVER_KEY}' | base64 -d)
-curl -sS https://hermes.apps.rhoai.sandbox3587.opentlc.com/v1/chat/completions \
-  -H "Authorization: Bearer ${KEY}" -H 'Content-Type: application/json' \
-  -d '{"messages":[{"role":"user","content":"hello"}]}'
-```
+certificate has to be carried explicitly, from
+`openshift-config-managed/default-ingress-cert`.
 
 ---
 
@@ -245,7 +181,7 @@ burst allowance and everything after it returns 429 until the window rolls.
 
 Raising it is a platform decision on the `MaaSSubscription` in the
 `models-as-a-service` namespace — deliberately **not** something this
-Application touches. And it is not a local change: that subscription's owner is
+deployment touches. And it is not a local change: that subscription's owner is
 the group `system:authenticated`, so raising the limit raises it for *every*
 caller on the cluster. Giving an agent its own subscription is usually the
 better move than widening the shared one.
@@ -269,8 +205,8 @@ tokens fits the budget comfortably. Only an agent exposes it.
   cluster that label selects the model-egress policy, which denies the cloud
   metadata endpoint.
 - **The Route is only as safe as `API_SERVER_KEY`.** It publishes Hermes' own
-  OpenAI-compatible API and its webhook endpoints. Drop the Route from the
-  overlay for cluster-internal use.
+  OpenAI-compatible API and its webhook endpoints. Drop the Route in an overlay
+  for cluster-internal use.
 
 ## Troubleshooting
 
@@ -279,14 +215,14 @@ tokens fits the budget comfortably. Only an agent exposes it.
 | **`401` from the agent, but `curl` from inside the same pod with the same key returns `200`** | **The credential never reached Hermes.** `model.key_env` in `config.yaml` is ignored on the bare `provider: custom` path — it is only honoured inside a named `providers:` entry. The key must arrive as the `OPENAI_API_KEY` env var. Listed first because the symptom is actively misleading: it sends you to the certificate and the network, which the working `curl` has already proved fine. |
 | `404` on inference while `/v1/models` works fine | Almost always a bare model name in `model.default`. Body-based routing needs the qualified `publishers/<ns>/models/<name>` id. Everything reports `Ready` while this fails. |
 | Pod runs, probes fail, no listener | `API_SERVER_ENABLED` not `true`. |
-| TLS verify error reaching MaaS | `ca-bundle.crt` is still the placeholder — run `fetch-ingress-ca.sh`. |
+| TLS verify error reaching MaaS | The ingress CA is missing from the trust bundle. See [MaaS key minting findings](#maas-key-minting-findings). |
 | Agent talks to OpenRouter, not MaaS | A stale `config.yaml` on the PVC. Confirm the initContainer ran. |
-| `401` from the gateway, `curl` also fails | Key expired, revoked, or minted without a `subscription`. Re-run `bootstrap-credentials.sh`. |
+| `401` from the gateway, `curl` also fails | Key expired, revoked, or minted without a `subscription`. Mint a new one. |
 | `429 Too Many Requests` | MaaS token quota. **Expect this with a demo-sized subscription** — see [Token quota](#token-quota-sizing). Not a client bug; raising it is a `MaaSSubscription` change, which is platform-owned. |
 | Authenticated request → `no healthy upstream` | Usually `maas-api` itself, not your workload. It holds a PostgreSQL connection to an **external** RDS instance on 5432; a default-deny egress policy on `redhat-ai-gateway-infra` severs it and presents as a gateway fault. |
 | `oc get application` returns nothing | RHACM shadows the short name. Use `applications.argoproj.io`. |
 
-## Cluster facts this overlay encodes
+## Where these findings were measured
 
 | | |
 |---|---|

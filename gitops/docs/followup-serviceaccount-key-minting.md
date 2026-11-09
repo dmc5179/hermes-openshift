@@ -1,8 +1,11 @@
 # Follow-up: mint the MaaS key from a ServiceAccount token, not a human token
 
-**Status:** open, feasibility proven · **Raised:** 2026-10-18 · **Verified
-viable:** 2026-10-19 · **Blocks:** nothing today; this ships with the
-manual-Secret flow in `scripts/bootstrap-credentials.sh`
+**Status:** done. The AutoShift `hermes-agent` policy mints the key with the pod's
+ServiceAccount token and renews it. · **Raised:** 2026-10-18 · **Verified
+viable:** 2026-10-19
+
+> Historical: `scripts/bootstrap-credentials.sh`, the manual-Secret flow this
+> describes, was removed with the Argo CD path. Kept for the feasibility findings.
 
 > `maas-api` accepts a projected ServiceAccount token, with no RBAC and **no
 > audience set** — see [Feasibility](#feasibility-settled-2026-10-19). What

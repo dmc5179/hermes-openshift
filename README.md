@@ -9,8 +9,8 @@ Deploy [Hermes Agent](https://github.com/NousResearch/hermes-agent), the self-im
 > | OpenShift AI with Models-as-a-Service, managed by RHACM and AutoShift | The AutoShift `hermes-agent` and `open-webui` policies. See [`autoshift/README.md`](autoshift/README.md) |
 > | Any OpenShift 4 cluster, with any OpenAI-compatible LLM | One script deploys Hermes plus Open WebUI. See [`deploy/README.md`](deploy/README.md) |
 >
-> [`gitops/`](gitops/README.md) is the earlier Argo CD path for Models-as-a-Service, kept for
-> its findings and for `gitops/base`, which `deploy/` builds on. The sections below describe
+> [`gitops/`](gitops/README.md) keeps `gitops/base`, which `deploy/` builds on, and the findings
+> from the earlier Argo CD path for Models-as-a-Service, which has been removed. The sections below describe
 > the original vLLM deployment from the Red Hat Developer article.
 
 **What this provides:**

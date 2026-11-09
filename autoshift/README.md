@@ -14,7 +14,7 @@ repository. The policies live in the AutoShift fork:
 They follow the same model as the rest of AutoShift: Argo CD on the hub delivers the policies,
 and RHACM applies the resources to each cluster selected by its labels. Hermes is the
 counterpart of [`../deploy/`](../deploy/) (any cluster, any OpenAI-compatible endpoint) and of
-[`../gitops/`](../gitops/) (the earlier Argo CD path for MaaS, now historical).
+[`../gitops/`](../gitops/) (the findings from the earlier Argo CD path for MaaS, since removed).
 
 ## What the policies do
 

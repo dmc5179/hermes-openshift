@@ -159,7 +159,7 @@ the parts specific to RHOAI MaaS: the key-minting entrypoint, the MaaS
 credentials and the MaaS CA. So every fix that base carries applies here too:
 the 8642 port and `API_SERVER_ENABLED`, config rendered onto the PVC at each
 start, `Prune=false` protection of the data volume, and the pinned image. The
-`gitops/` tree is untouched. The script refuses to modify a namespace that an
+base is used as it is, unedited. The script refuses to modify a namespace that an
 Argo CD Application manages.
 
 ---

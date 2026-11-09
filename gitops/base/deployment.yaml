@@ -106,8 +106,8 @@ spec:
             - configMapRef:
                 name: hermes-env
             - secretRef:
-                # Created out of band, not managed by Argo CD. See
-                # scripts/bootstrap-credentials.sh.
+                # Created out of band. The deploy/ overlay renames it to
+                # hermes-credentials, which deploy-hermes.sh creates.
                 name: hermes-maas-credentials
 
           env:
