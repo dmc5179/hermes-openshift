@@ -1,6 +1,8 @@
 # HISTORICAL: do not apply. This Application targets the rhoai-sandbox3587 overlay, a cluster
 # that no longer exists. RHOAI MaaS clusters deploy Hermes through the AutoShift hermes-agent
-# policy instead; see ../README.md.
+# policy instead; see ../README.md. The AutoShift gitops-workloads policy no longer lists it
+# either: config.gitopsWorkloads is empty as of fork commit 52e07269. The comments below
+# record how this Application behaved when it was live.
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:

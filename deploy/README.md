@@ -89,7 +89,7 @@ Each component has its own script, and you can run it without `deploy.sh`:
 
 Open WebUI can also point at a Hermes that wasn't deployed by these scripts.
 Pass `--hermes-url` and `--hermes-api-key-file`. It also recognizes the RHOAI
-MaaS deployment in [`../gitops/`](../gitops/) automatically.
+MaaS deployment from the historical [`../gitops/`](../gitops/) path automatically.
 
 `deploy.sh` looks for the Open WebUI script in `<workspace>/open-web-ui`, the
 directory two levels above this repo. Set `OPENWEBUI_DIR` if yours is
@@ -159,8 +159,8 @@ the parts specific to RHOAI MaaS: the key-minting entrypoint, the MaaS
 credentials and the MaaS CA. So every fix that base carries applies here too:
 the 8642 port and `API_SERVER_ENABLED`, config rendered onto the PVC at each
 start, `Prune=false` protection of the data volume, and the pinned image. The
-`gitops/` tree and its Argo CD deployment are untouched. The script refuses to
-modify a namespace that Argo CD manages.
+`gitops/` tree is untouched. The script refuses to modify a namespace that an
+Argo CD Application manages.
 
 ---
 
@@ -235,7 +235,7 @@ mock works end to end, switching to a real endpoint is only a change to the
 | Chat hangs or errors on long tasks | A proxy between you and the cluster with a shorter timeout than the Route's 10 minutes. |
 | Hermes pod stuck in `Init` for minutes | First pull of the ~9 GB Hermes image. Subsequent restarts are fast. |
 | Open WebUI uploads or RAG fail | The models weren't seeded: check `oc logs deploy/open-webui -c seed-models -n open-webui`. |
-| `managed by Argo CD Application` | That namespace belongs to the [`../gitops/`](../gitops/) deployment. Use another `HERMES_NAMESPACE`, or change it through Git. |
+| `managed by Argo CD Application` | An Argo CD Application manages that namespace, for example one left from the historical [`../gitops/`](../gitops/) path. Use another `HERMES_NAMESPACE`, or change it through Git. |
 
 Logs: `oc logs deploy/hermes-agent -n hermes --all-containers` and
 `oc logs deploy/open-webui -n open-webui --all-containers`.
