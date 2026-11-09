@@ -1,3 +1,6 @@
+# HISTORICAL: do not apply. This Application targets the rhoai-sandbox3587 overlay, a cluster
+# that no longer exists. RHOAI MaaS clusters deploy Hermes through the AutoShift hermes-agent
+# policy instead; see ../README.md.
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:

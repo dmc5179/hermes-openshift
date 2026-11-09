@@ -1,5 +1,22 @@
 # Hermes Agent on RHOAI Models-as-a-Service (Argo CD + Kustomize)
 
+> **Superseded for RHOAI MaaS clusters.** Hermes is now deployed by the AutoShift
+> RHACM policies `hermes-agent` and `open-webui` in the AutoShift fork
+> (`dmc5179/autoshiftv2`, branch `rhoai-maas`, under `policies/stable/`). They derive
+> each cluster's gateway, model, subscription and CA instead of needing a per-cluster
+> overlay, and the pod renews its own MaaS key. See [`../autoshift/`](../autoshift/).
+>
+> What is still current here:
+>
+> - **[`base/`](base/)** is the shared Hermes workload. [`../deploy/`](../deploy/)
+>   builds on it for clusters without RHOAI, so it must not be removed.
+> - **The findings below**, about the published image, its entrypoint, port 8642,
+>   `API_SERVER_ENABLED` and the configuration rendered onto the PVC, still hold.
+>
+> What is historical: [`overlays/rhoai-sandbox3587/`](overlays/rhoai-sandbox3587/) and
+> [`argocd/`](argocd/) target a cluster that no longer exists. Kept as a record of how
+> the Argo CD path was validated, not for deployment.
+
 Deploys Hermes Agent as a **client of Red Hat OpenShift AI Models-as-a-Service**,
 rather than alongside its own vLLM `InferenceService` as [`../manifests/`](../manifests/) does.
 
